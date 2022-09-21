@@ -1,0 +1,1618 @@
+Preparations (onshore/offshore)
+Live Upgrade Software[edit]
+Patches[edit]
+The "Recommended OS Patchset" from SUN is continously updated and can be downloaded from "My Oracle Support".
+Patches&Updates - Patch Search - Product or Family.
+Product: Solaris Operating System
+Release: Solaris 10 Operating System
+Platform: Oracle Solaris on SPARC (64 bit)
+Type: Patchset
+
+A few weeks before the installation of the patches, the "Recommended OS Patchset" is downloaded and frozen by the offshore Solaris team.
+The "Recommended OS Patchset" is placed on the jumpstart servers below /JET/patches/10_Recommended_<date> or 10_Recommended_CPU_<year>_<mm> for a Critical Patch Update bundle.
+
+Every (patch) release has it's own identification, that is also used during the lucreate, e.g. s10_u10_r1, s10_u10_r2, s10_u11_r1, ..
+
+On the jumpstartservers, the "Recommended OS Patchset" is linked to the BE name.
+
+ln -s 10_Recommended_CPU_2014-07 s10_u11_r3
+
+[root@s00133:NODB patches]# ls -l s10_u11_r3
+lrwxrwxrwx   1 root     root          26 Nov 11 20:49 s10_u11_r3 -> 10_Recommended_CPU_2014-07
+Updates[edit]
+The "Solaris Update Release" is placed on the jumpstart servers below /JET/media
+Every update release has it's own identification, that is also used during the lucreate, e.g. Solaris10_U10 or Solaris10_U11
+
+LU patches[edit]
+Before starting a live upgrade, it is good practice to patch the live upgrade software to the latest level. For the latest information search for the knowledge document 1004881.1 "Live Upgrade Software Patch Requirements" on the My Oracle Support web site.
+
+The LU patches to be used are tested by onshore Solaris and are placed in /mnt/repository/solaris/packages/liveupgrade_s10_patches.
+
+Upgrade Services Tools[edit]
+If the current level of Services Tools Bundle (STB) for Solaris is not installed, install the current version.
+Check current version of Service Tools:
+
+[root@s00153:NODB ~]# sneep -V
+Release 8.05-20140909
+If version 8.05 is displayed service tools are already upgraded
+
+cd /mnt/repository/solaris/packages/stb
+./install_stb.sh
+ 
+Would you like to (I)nstall, (X)tract, or (E)xit ? (I by default)
+
+Workarounds before[edit]
+Create temporary directory on the globalzone to store logfiles etc.
+
+# rm -rf /var/tmp/liveupgrade
+# mkdir -p /var/tmp/liveupgrade/hostnamefiles
+/etc/hostname file missing after update[edit]
+It is noticed that one of the /etc/hostname files was missing in the localzones after the update. Save a copy of the /etc/hostname files to be able to recreate the missing file again after the update.
+# for z in `zoneadm list -i | grep -v global`
+do
+    mkdir /var/tmp/liveupgrade/hostnamefiles/$z
+    zp=`zonecfg -z $z info zonepath | awk '{print $2}'`
+    cp -p $zp/root/etc/hostname* /var/tmp/liveupgrade/hostnamefiles/${z}/ 2>/dev/null
+done
+Check OpsCenter agent is removed[edit]
+Because Opscenter agents causes severe problems with Live Upgrade, check if the agent is removed.
+
+[root@s00143:NODB bin]# cacaoadm status -i scn-agent
+Instance name not found: [scn-agent].
+If the instance is found, contact Onnshore UNIX team to remove the agent before creating the new BE.
+
+Check Before[edit]
+Check LU software[edit]
+Check on the global that the following packages are installed
+
+# pkginfo SUNWlucfg SUNWluu SUNWlur
+application SUNWlucfg Live Upgrade Configuration
+application SUNWlur   Live Upgrade (root)
+application SUNWluu   Live Upgrade (usr)
+Verify that the right LU patches are installed, these should be the highest versions.
+Patch 119254-90: SunOS 5.10: Install and Patch Utilities Patch - Aug/14/2014
+Patch 121428-15: SunOS 5.10: Live Upgrade Zones Support Patch  - May 11, 2011 
+Patch 121430-92: SunOS 5.8 5.9 5.10: Live Upgrade Patch - Jun 15, 2014
+and
+138130-01 vold patch (already supperseeded on all servers)
+146578-06 cpio patch (Recent replacement for this patch is 148027-03)
+Check:
+
+# showrev -p | egrep 'Patch: 119254-90|Patch: 121430-92|Patch: 121428-15|Patch: 148027-06'
+..
+[root@s00143:NODB ~]# showrev -p | egrep 'Patch: 119254-90|Patch: 121430-92|Patch: 121428-15|Patch: 148027-06'
+Patch: 121430-92 Obsoletes: 121435-04, 121437-02 Requires:  Incompatibles:  Packages: SUNWlucfg, SUNWlur, SUNWluu
+Patch: 148027-06 Obsoletes: 121002-04, 126316-01, 126651-02, 127920-01, 127922-04, 128330-02, 137088-01, 138275-01, 138621-02, 138623-05, 140914-02, 142009-01, 142336-01, 143588-01, 144300-01, 144876-01, 146578-06 Requires: 118833-36, 12
+0011-14, 127127-11, 137137-09, 139555-08, 142909-17 Incompatibles:  Packages: SUNWcsu, SUNWcsr, SUNWesu, SUNWxcu4
+Patch: 119254-90 Obsoletes: 119015-03 Requires: 121133-02 Incompatibles:  Packages: SUNWswmt, SUNWinstall-patch-utils-root, SUNWpkgcmdsu, SUNWpkgcmdsr
+Patch: 121428-15 Obsoletes:  Requires: 120235-01, 121430-16 Incompatibles:  Packages: SUNWluzone
+If needed, install the patches.
+
+# patchadd /mnt/repository/solaris/packages/liveupgrade_s10_patches/119254-90
+# patchadd /mnt/repository/solaris/packages/liveupgrade_s10_patches/121430-92
+# patchadd /mnt/repository/solaris/packages/liveupgrade_s10_patches/121428-15 
+# patchadd /mnt/repository/solaris/packages/liveupgrade_s10_patches/148027-06 
+
+Check backups[edit]
+Check if a flar is created on a monthly basis.
+
+# cd /mnt/sysman/flar/s00238
+# ls -l
+total 12334483
+-rw-r--r--   1 nobody   nobody       560 May 20 01:32 flarlog
+-rw-r--r--   1 nobody   nobody   6310098151 May 20 01:32 s00238_20052012.flar
+drwxr-xr-x   2 nobody   nobody        43 May 20 01:00 sysinfo
+
+# cat flarlog
+20-05-2012 01:00:01 Script Started
+20-05-2012 01:00:02 Old dump directories are rotated.
+20-05-2012 01:00:09 System critical information dumped to /mnt/sysman/flar/s00238/sysinfo/
+Full Flash
+Checking integrity...
+Integrity OK.
+Running precreation scripts...
+Precreation scripts done.
+Creating the archive...
+Archive creation complete.
+Running postcreation scripts...
+Postcreation scripts done.
+
+Running pre-exit scripts...
+Pre-exit scripts done.
+20-05-2012 01:32:57 flar /mnt/sysman/flar/s00238/s00238_20052012.flar is created
+20-05-2012 01:32:57 Script Ended
+
+# cd
+If not, create one with the following script:
+
+# /mnt/repository/solaris/scripts/create_flar.sh -b /mnt/sysman/flar
+Check for freespace[edit]
+# zpool list
+# zfs list
+Check freespace on the rpool and on all affected sz....-sys zpools of the root ZFS's of affected non-global zones. This extra space is required for the root ZFS for the new BE and for shapshots during the upgrade.
+
+Check for ZFS of previous upgrades[edit]
+Check if no snapshots or clones from a previuos upgrade are still present. If not removed this will cause a Live Upgrade to fail.
+
+
+Check rpools in use
+
+[ind_vasan999@s00082:NODB ~]$ zfs list -t all  
+Sample of an rpool of a current BE:
+
+rpool                       74.4G  59.5G    96K  /rpool
+rpool/ROOT                  9.24G  59.5G    21K  legacy
+rpool/ROOT/s10_u11_r1       9.24G  59.5G  9.24G  /
+rpool/ROOT/s10_u11_r1/core    31K  59.5G    31K  /var/core
+rpool/dump                  32.0G  59.5G  32.0G  -
+rpool/export                1.15G  59.5G    22K  /export
+rpool/export/home           1.15G  59.5G  1.15G  /export/home
+rpool/swap                  32.0G  59.5G  32.0G  -
+If a ROOT ZFS in the new BE is present, it must be empty:
+
+NAME                              USED  AVAIL  REFER  MOUNTPOINT
+rpool2                      64.0G  69.9G    96K  /rpool2
+rpool2/ROOT                   18K  69.9G    18K  legacy
+rpool2/core                   23K  8.00G    23K  /var/core
+rpool2/dump                 32.0G  69.9G  32.0G  -
+rpool2/swap                 32.0G  69.9G  32.0G  -
+The ZFS's for zone-sys also have no shapshots of clones:
+
+[ind_vasan999@s00153:NODB ~]$ zfs list -t all | grep sys
+sz0652-sys                  6.04G  37.0G    35K  /sz0652-sys
+sz0652-sys/sz0652-root      6.04G  37.0G  6.04G  /sz0652-sys/sz0652-root
+sz0653-sys                  5.99G  37.1G    35K  /sz0653-sys
+sz0653-sys/sz0653-root      5.99G  37.1G  5.99G  /sz0653-sys/sz0653-root
+sz0654-sys                  18.9G  24.1G    28K  /sz0654-sys
+sz0654-sys/sz0654-root      18.9G  24.1G  18.9G  /sz0654-sys/sz0654-root
+sz0656-sys                  6.82G  36.2G    28K  /sz0656-sys
+sz0656-sys/sz0656-root      6.82G  36.2G  6.82G  /sz0656-sys/sz0656-root
+sz0726-sys                  8.87G  34.2G    28K  /sz0726-sys
+sz0726-sys/sz0726-root      8.86G  34.2G  8.86G  /sz0726-sys/sz0726-root
+sz0727-sys                  10.4G  32.6G    28K  /sz0727-sys
+sz0727-sys/sz0727-root      10.4G  32.6G  10.4G  /sz0727-sys/sz0727-root
+Check for zones in configured state[edit]
+Liveupgrade can not be used if zones are in configured state, see Lucreate_error_configured_zones
+
+# zoneadm list -cv
+Check current state of localzones before[edit]
+# zoneadm list -cv > /var/tmp/liveupgrade/zoneadm_state_before
+Check and save the ldm config info using below command for T Series Servers[edit]
+# ldm list-constraints -p > /var/tmp/liveupgrade/list-constraints-p_state_before
+Backup of ldm configuration[edit]
+Take the backup of ldm configuration.
+
+# /usr/sbin/ldm list-constraints -x  >/var/tmp/ldm-save-primary.xml (change location)
+# cd /
+# tar -cvpf /var/tmp/ldm-autosave.tar var/opt/SUNWldm/autosave-*
+Check available BEs[edit]
+IF a BE is defined, only one BE should be present
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r2                 yes      yes    yes       no     -
+Verify globalzone[edit]
+The verify_zone.sh script verifies the zone against the latest buildingblock design.
+
+# rm /var/tmp/liveupgrade/verify_global_before
+# /mnt/repository/solaris/scripts/verify_zone.sh -v | tee -a /var/tmp/liveupgrade/verify_global_before
+
+Verify the global zone physical memory 
+ 
+# prtdiag -v | grep -i "Memory size" > /var/tmp/liveupgrade/gbz_ram_before
+Check for FAILED items.
+Note: not all FAILED items are a problem for liveupgrade.
+
+Verify localzones[edit]
+# for i in $(zoneadm list |grep -v global)
+do
+echo $i
+rm /var/tmp/liveupgrade/verify_${i}_before 2>/dev/null
+zlogin $i /mnt/repository/solaris/scripts/verify_zone.sh -v | tee -a /var/tmp/liveupgrade/verify_${i}_before
+echo
+done
+Check for FAILED items.
+
+Sometimes the repository can not be mounted and you'll get a "permission denied" error. Run the script again againts the localzone, e.g.
+
+# zlogin sz9992 /mnt/repository/solaris/scripts/verify_zone.sh -v | tee -a /var/tmp/liveupgrade/verify_sz9992_before
+Collect filesystem information of localzones[edit]
+Collect ZFS filesystem info before upgrade
+
+1. counts for quick check
+
+# for i in $(zoneadm list | grep sz | sort)
+do
+  printf "$i "
+  zlogin $i df -h -F zfs | wc -l
+done >/var/tmp/liveupgrade/verify_filesystems_count_before
+
+
+2. details for extended check
+
+# for i in $(zoneadm list | grep sz | sort)
+do
+   echo == $i ZFS filesystems ==
+   zlogin $i df -h -F zfs |awk '{ print $1 " " $2 " " $6}' 
+done > /var/tmp/liveupgrade/verify_filesystems_before
+Verify Console login[edit]
+Verify that you can login to the console (XSCF or ILOM) as admin2 or super-admin.
+Also verify that you can login as root on the OS.
+
+Verify local-/globalzone connection[edit]
+Check ssh connection to the global and all non global-zone from your workstation or steppingstone (s00110).
+
+# ssh sz9992.db.gen.local
+New Boot Environment (BE)[edit]
+It is usefull to start a screen session. If connection drops, the upgrade is not terminated and you can reattach to the screen session.
+First unset the TMOUT parameter, otherwise the screen session is terminated after the timeout.
+
+# unset TMOUT
+# screen
+Note: <ctrl>-a H can be used for a hardcopy of all screen output. Output will be in file screenlog.1
+
+New rpool[edit]
+Check the available BEs:
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r2                 yes      yes    yes       no     -
+Check the current rpools:
+
+# zpool list | grep rpool
+NAME         SIZE  ALLOC   FREE    CAP  HEALTH  ALTROOT
+rpool        278G  37.7G   240G    13%  ONLINE  -
+rpool2       278G   576K   278G     0%  ONLINE  -
+rpool and rpool2 exist.
+
+Determine which rpool is currently used:
+
+# df -h /
+Filesystem             size   used  avail capacity  Mounted on
+rpool/ROOT/s10_u11_r2
+                       275G    35G   138G    21%    /
+As you can see, rpool is used.
+
+Creating new rpool[edit]
+If there is no second rpool in the server, please create the rpool2 using the below wiki procedure.
+
+Remove old BE[edit]
+The old BE should be removed. When new LU patches are installed, the old LU can contain wrong/invalid information. We start with a clean situation to prevent errors caused by a presious version of Live Upgrade.
+
+
+
+Check the current BE's. Only one BE should be present.
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r2                 yes      yes    yes       no     -
+Remove the BE.
+
+ 
+# rm /etc/lutab
+rm /etc/lu/ICF.*
+rm /etc/lu/INODE.*
+rm /etc/lu/vtoc.*
+rm /etc/lu/.??*
+rm /etc/lu/tmp/*
+# 
+Also a cleanup of /.alt is needed
+
+# df -h | grep /.alt
+Make sure nothing is mounted on the /.alt.* directories before attempting to delete these directories!
+
+# rm -r /.alt.*
+Finally old LU-files in zonepaths of all zones should be cleared:
+
+# cd <zonepath> ; rm -rf lu*
+or
+
+# for zone in `zoneadm list|grep -v global`; do ls -l /$zone-sys/$zone-root; done
+# for zone in `zoneadm list|grep -v global`; do rm -rf /$zone-sys/$zone-root/lu*; done
+Check cleanup:
+
+ 
+# lustatus
+ERROR: No boot environments are configured on this system
+ERROR: cannot determine list of all boot environment names
+Create new BE[edit]
+Remove old logfiles:
+
+# rm /var/tmp/liveupgrade/lucreate.*
+# rm /var/tmp/liveupgrade/lupatch.*
+Create an alternate BE which will be updated with the new release
+
+If no boot environments are defined (Message: No boot environments are configured on this system), a BE will be created automatically for the current environment.
+
+Give the current BE a name using the -c option. Is a BE was present, use the name from the lustatus output at the start.
+
+M5K/T3/T4
+Use the -p option to create the new BE on the new rpool, in this example rpool
+# lucreate -l /var/tmp/liveupgrade/lucreate.error -o /var/tmp/liveupgrade/lucreate.log -c s10_u11_r2 -n s10_u11_r3 -p rpool2
+
+T5240 and Solaris 10 Guest ldoms
+Do not use the -p option, because the new BE must be created in the same pool
+# lucreate -l /var/tmp/liveupgrade/lucreate.error -o /var/tmp/liveupgrade/lucreate.log -c s10_u11_r2 -n s10_u11_r3
+Check for errors
+
+# cat /var/tmp/liveupgrade/lucreate.error
+INFORMATION: No BEs are configured on this system.
+Check the available BE's
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r2                 yes      yes    yes       no     -
+s10_u11_r4                 yes      no     no        yes    -
+
+
+Stop the screen session
+
+# exit
+Liveupgrade (no downtime)[edit]
+It is usefull to start a screen session. If connection drops, the upgrade is not terminated and you can reattach to the screen session.
+First unset the TMOUT parameter, otherwise the screen session is terminated after the timeout.
+
+# unset TMOUT
+# screen
+Mount jumpstart server[edit]
+The update/patches are located on the jumpstart server depending in Aalsmeer or Haarlem, see Overview Jumpstart Servers. In this case we create an nfs mount from the s00142. First create the nfs mount.
+CCA / GPW
+
+# mount -F nfs -o ro,vers=3 s00133-mgt:/JET /cdrom
+CCH / GHD
+
+# mount -F nfs -o ro,vers=3 s00142-mgt:/JET /cdrom
+Parallel processing[edit]
+After the latest patches are applied, LU can use parallel processing. To use this, check if num_proc is set to a value > 1.
+Example:
+
+# vi /etc/patch/pdo.conf
+num_proc=8
+Newer versions already show a much higher value, like 192.
+
+Solaris Update[edit]
+Skip this step for this cycle s10_u11_r3 (Nov/Dec-2014)
+
+Note: If only recommended patches are installed and no new Solaris update version is installed, you skip this part of the wiki and proceed directly with "Solaris Patching". E.g. an update from s10_u10_r2 to s10_u10_r3 is only patching and the update level (u10) is not affected.
+
+
+This steps are needed for an upgrade to a new Solaris update release, e.g. from Update 10 to Update 11 (s10_u10_r2 to s10_u11_r1)
+
+Update[edit]
+Remove old logfiles
+
+# rm /var/tmp/liveupgrade/luupgrade.error /var/tmp/liveupgrade/luupgrade.log
+Start the upgrade on the new BE. In this case also the non global zones will be upgraded.
+
+# unset TMOUT
+# screen
+# BOOT_MENU_FILE="menu.lst"
+# export BOOT_MENU_FILE
+
+# echo "auto_reg=disable" > /var/tmp/liveupgrade/sysidcfg
+luupgrade -l /var/tmp/liveupgrade/luupgrade.error -o /var/tmp/liveupgrade/luupgrade.log -u -n s10_u11_r3 -s /cdrom/media/Solaris10_U11 -k /var/tmp/liveupgrade/sysidcfg
+
+.... blocks
+miniroot filesystem is <lofs>
+Mounting miniroot at </cdrom/Solaris_10/Tools/Boot>
+.
+.
+.
+The Solaris upgrade of the boot environment <s10_u11_r3> is complete.
+Installing failsafe
+Failsafe install is complete.
+If the -k option is not supported then start the luupgrade without the -k option.
+
+Install LU patches again[edit]
+Check the patch level of Live Upgrade software on new BE after the update. Because the software of the updated Boot Environment is replaced by the installation level of the software, a lower level of the live upgrade patches can be the result after the luupgrade step. In this case, install the same patches for the Live Upgrade software on the new BE as were installed at the start of this procedure.
+
+If the LU patches are not applied, luactivate will probably terminate with message "The Live Upgrade Patch revision is lower than required in boot environment. Apply Patch … or later to boot environment in order to activate it" .
+
+Mount the ABE
+
+# lumount s10_u11_r1
+/.alt.s10_u11_r1
+Check the installed patches are in the ABE
+
+# showrev -p -R /.alt.s10_u11_r1 |  egrep 'Patch: 119254-89|Patch: 121430-90|Patch: 121428-15|Patch: 148027-03'
+Umount the ABE
+
+# cd
+# luumount s10_u11_r1
+If the patches from Check LU software are not installed. Install the patches in the ABE
+
+# rm /var/tmp/liveupgrade/lupatch.log /var/tmp/liveupgrade/lupatch.error
+# luupgrade -n s10_u11_r1 -l /var/tmp/liveupgrade/lupatch.error -o /var/tmp/liveupgrade/lupatch.log -s /mnt/repository/solaris/packages/liveupgrade_s10_patches -t 119254-89 121430-90 121428-15 148027-03
+Install additional patches[edit]
+If additional patches need to be installed, continue with the next paragraph Solaris Patching
+
+Solaris Patching[edit]
+If the upgrade step is skipped, mount the jumpstart server of the same DC as described in Solaris Upgrade
+CCA / GPW
+
+# mount -F nfs -o ro,vers=3 s00133-mgt:/JET /cdrom
+CCH / GHD
+
+# mount -F nfs -o ro,vers=3 s00142-mgt:/JET /cdrom
+After the latest patches are applied, LU can use parallel processing. Check if this option is set correctly. Maybe it is set back to the default by luupgrade.
+
+# vi /etc/patch/pdo.conf
+num_proc=8
+Remove old logfiles
+
+# rm /var/tmp/liveupgrade/lupatch.log /var/tmp/liveupgrade/lupatch.error
+Start the upgrade on the new BE. In this case also the non global zones will be upgraded.
+
+# unset TMOUT
+# screen
+# BOOT_MENU_FILE="menu.lst"
+# export BOOT_MENU_FILE
+# luupgrade -n s10_u11_r3 -l /var/tmp/liveupgrade/lupatch.error -o /var/tmp/liveupgrade/lupatch.log -s /cdrom/patches/s10_u11_r3/patches -t `cat /cdrom/patches/s10_u11_r3/patches/patch_order`
+..
+..
+Done!
+Unmounting the BE <s10_u11_r3>.
+The patch add to the BE <s10_u11_r3> completed.
+
+
+Stop the screen session
+
+# exit
+Verify patches after upgrade[edit]
+Verify the patches applied on the alternate boot environment s10_u11_r3. If any patch is not applied to the BE, please check the reason. If those patches are not applicable to our environment, ignore that.
+
+Mount the ABE.
+
+# lumount s10_u11_r3
+/.alt.s10_u11_r3
+#
+Check the installed patches are available in ABE.
+
+# for i in `cat /mnt/repository/solaris/scripts/patchlist_s10u11r3`
+do
+if [ `ls /.alt.s10_u11_r3/var/sadm/patch|grep $i` ]
+then
+echo " Patch : $i : Applied "
+else
+echo " Patch : $i : Not Applied "
+fi
+done
+Umount the ABE
+
+# cd
+# luumount s10_u11_r3
+LDOM upgrade to 3.1 (T-Series Servers)[edit]
+Perform LDOM upgrade for T5240, T3 and T4 servers.
+
+Mount the new BE and check the LDOM version.
+
+# lumount s10_u11_r2
+/.alt.s10_u11_r2
+
+# pkginfo -l -R /.alt.s10_u11_r2 SUNWldm | grep VERSION
+   VERSION:  3.1.0.0.24,REV=2013.07.23.12.23
+If version is lower than 3.1, upgrade LDOM using following procedure.
+
+Remove the old version.
+
+# pkgrm -R /.alt.s10_u11_r2 SUNWldm 
+The following package is currently installed:
+   SUNWldm  LDoms Manager software
+            (sparc.sun4v) 2.2.0.0,REV=2012.04.19.14.10
+
+Do you want to remove this package? [y,n,?,q] y
+
+## Removing installed package instance <SUNWldm>
+## Verifying package <SUNWldm> dependencies in global zone
+WARNING:
+    The <SUNWldmib> package depends on the package
+    currently being removed.
+Dependency checking failed.
+
+Do you want to continue with the removal of this package [y,n,?,q] y
+## Processing package information.
+## Removing pathnames in class <manifest>
+## Removing pathnames in class <rbac>
+## Removing pathnames in class <none>
+/.alt.s10_u11_r2/var/svc/manifest/platform/sun4v <shared pathname not removed>
+.
+.
+/.alt.s10_u11_r2/etc <shared pathname not removed>
+## Updating system information.
+
+Removal of <SUNWldm> was successful.
+Install new version of LDOM package.
+
+# pkgadd -R /.alt.s10_u11_r2 -Gd /mnt/repository/solaris/packages/OVM3.1/Product/ SUNWldm.v
+
+Processing package instance <SUNWldm.v> from </mnt/repository/solaris/packages/OVM3.1/Product>
+
+LDoms Manager software(sparc.sun4v) 3.1.0.0.24,REV=2013.07.23.12.23
+Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+Using </.alt.s10_u11_r2> as the package base directory.
+## Processing package information.
+## Processing system information.
+   15 package pathnames are already properly installed.
+## Verifying package dependencies.
+## Verifying disk space requirements.
+## Checking for conflicts with packages already installed.
+## Checking for setuid/setgid programs.
+
+Installing LDoms Manager software as <SUNWldm>
+
+## Installing part 1 of 1.
+/.alt.s10_u11_r2/opt/SUNWldm/bin/ldm <symbolic link>
+.
+.
+.
+/.alt.s10_u11_r2/usr/share/man/man1m/ldmpower.1m
+[ verifying class <none> ]
+[ verifying class <rbac> ]
+[ verifying class <manifest> ]
+
+Installation of <SUNWldm> was successful.
+Check the LDOM version.
+
+# pkginfo -l -R /.alt.s10_u11_r2 SUNWldm | grep VERSION
+   VERSION:  3.1.0.0.24,REV=2013.07.23.12.23
+Unmount the new BE.
+
+# luumount s10_u11_r2
+STOP HERE
+
+The next coming steps should be performed only in the approved downtime.
+
+Activate new BE (downtime)[edit]
+It is usefull to start a screen session. If connection drops, the upgrade is not terminated and you can reattach to the screen session.
+First unset the TMOUT parameter, otherwise the screen session is terminated after the timeout.
+
+# unset TMOUT
+# screen
+Checks before[edit]
+The new boot environment must have a status of “complete”.
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r2                 yes      yes    yes       no     -
+s10_u11_r3                 yes      no     no        yes    -
+Verify that the new BE can be mounted.
+
+# lumount s10_u11_r3
+/.alt.s10_u11_r3
+
+
+Sample output (upgrade from s10_u11_r2 to s10_u11_r3)
+
+[root@s00143:NODB patch]# zfs list
+NAME                                USED  AVAIL  REFER  MOUNTPOINT
+opsc                               28.9G   165G    35K  /opsc
+opsc/locallibrary                  4.74G   165G  4.74G  /opsc/locallibrary
+opsc/swlib0                        9.37G   165G  9.37G  /opsc/swlib0
+opsc/swlib2                        14.8G   165G  14.8G  /opsc/swlib2
+rpool2                             71.0G   203G    97K  /rpool2
+rpool2/ROOT                        27.7G   203G    21K  legacy
+rpool2/ROOT/s10_u11_r2             34.6M   203G  25.1G  /
+rpool2/ROOT/s10_u11_r3             27.7G   203G  26.3G  /
+rpool2/ROOT/s10_u11_r3@s10_u11_r3  1.32G      -  25.2G  -
+rpool2/core                         285M  7.72G   285M  /var/core
+rpool2/dump                        10.0G   203G  10.0G  -
+rpool2/export                      4.20M   203G    25K  /export
+rpool2/export/home                 4.17M   203G  4.17M  /export/home
+rpool2/swap                        33.0G   204G  32.0G  -
+[root@s00143:NODB patch]#
+
+this server has no zones....
+
+Sample output (upgrade from s10_u11_r1 to s10_u11_r2)
+
+# zfs list
+NAME                                USED  AVAIL  REFER  MOUNTPOINT
+opsc                               10.5G   140G    24K  /opsc
+opsc/patch_lib                     10.1G   140G  10.1G  /opsc/patch_lib
+opsc/sw_lib                         444M   140G   444M  /opsc/sw_lib
+rpool                               197G  77.1G  96.5K  /rpool
+rpool/ROOT                         23.8G  77.1G    21K  legacy
+rpool/ROOT/s10_u11_r2              23.8G  77.1G  8.14G  /.alt.s10_u11_r2
+rpool/ROOT/s10_u11_r2/var          15.6G  77.1G  15.0G  /.alt.s10_u11_r2/var
+rpool/ROOT/s10_u11_r2/var/core      652M  77.1G   652M  legacy
+rpool/dump                         32.0G  77.1G  32.0G  -
+rpool/export                       8.76G  11.2G    23K  /export
+rpool/export/home                  8.76G  11.2G  8.76G  /export/home
+rpool/swap                          132G  81.1G   128G  -
+rpool2                              188G  85.9G   106K  /rpool2
+rpool2/ROOT                        22.7G  85.9G    31K  legacy
+rpool2/ROOT/s10_u11_r1             22.7G  85.9G  8.13G  /
+rpool2/ROOT/s10_u11_r1/var         14.6G  85.9G  13.9G  /var
+rpool2/ROOT/s10_u11_r1/var/core     652M  7.36G   652M  legacy
+rpool2/dump                        33.0G  86.9G  32.0G  -
+rpool2/swap                         132G  89.9G   128G  -
+sz0789-app                          914K  43.1G    21K  /sz0789-app
+sz0789-app/home                      81K  43.1G    81K  legacy
+sz0789-app/u01                      720K  43.1G   720K  legacy
+sz0789-sys                         2.75G  40.3G    23K  /sz0789-sys
+sz0789-sys/sz0789-root             2.75G  40.3G  2.75G  /sz0789-sys/sz0789-root
+sz0790-app                         36.7G  6.39G    21K  /sz0790-app
+sz0790-app/home                    40.0M  6.39G  40.0M  legacy
+sz0790-app/u01                     36.6G  6.39G  36.6G  legacy
+sz0790-sys                         8.97G  34.1G    34K  /sz0790-sys
+sz0790-sys/sz0790-root             7.48G  34.1G  7.44G  /sz0790-sys/sz0790-root
+sz0790-sys/sz0790-root@s10_u11_r2  35.6M      -  7.43G  -
+sz0790-sys/sz0790-root-s10_u11_r2  1.49G  34.1G  8.06G  /.alt.s10_u11_r2/sz0790-sys/sz0790-root-s10_u11_r2
+sz0790-test                        1.38M  53.6G    31K  /sz0790-test
+sz0790-test/restore_test             32K  53.6G    32K  /sz0790-sys/sz0790-root/root/restore_test
+sz0791-app                          780K  43.1G    21K  /sz0791-app
+sz0791-app/home                     636K  43.1G   636K  legacy
+sz0791-app/u01                       24K  43.1G    24K  legacy
+sz0791-sys                         6.91G  36.2G    34K  /sz0791-sys
+sz0791-sys/sz0791-root             5.48G  36.2G  5.44G  /sz0791-sys/sz0791-root
+sz0791-sys/sz0791-root@s10_u11_r2  37.0M      -  5.44G  -
+sz0791-sys/sz0791-root-s10_u11_r2  1.42G  36.2G  6.04G  /.alt.s10_u11_r2/sz0791-sys/sz0791-root-s10_u11_r2
+sz0792-app                          878K  43.1G    21K  /sz0792-app
+sz0792-app/home                     732K  43.1G   732K  legacy
+sz0792-app/u01                       24K  43.1G    24K  legacy
+sz0792-sys                         6.87G  36.2G    34K  /sz0792-sys
+sz0792-sys/sz0792-root             5.44G  36.2G  5.41G  /sz0792-sys/sz0792-root
+sz0792-sys/sz0792-root@s10_u11_r2  35.0M      -  5.40G  -
+sz0792-sys/sz0792-root-s10_u11_r2  1.42G  36.2G  6.00G  /.alt.s10_u11_r2/sz0792-sys/sz0792-root-s10_u11_r2
+[root@s00153:NODB ~]# 
+
+
+Unmount the new BE again
+
+# luumount s10_u11_r3
+Verify that the new BE is unmounted (no /.alt filesystems)
+
+# zfs list | grep '.alt'
+Disable ldmd for systems running Logical Domain[edit]
+For a system runnning Logical Domains (e.g. T3/T4/T5) it is neccesary to temporarily disable the logical domain service (ldmd). You can only update the eeprom variables while the LogicalDomainsManager is disabled.
+
+Without disabling ldmd it is not possible to change the boot-device and the new system will not boot after the luactivate!
+
+svcadm disable -t ldmd
+Disable Zabbix and Puppet[edit]
+Comment out crontab entries for Puppet
+
+crontab -e
+.....
+# Puppet Name: pe-mcollective-metadata
+#0,15,30,45 * * * * /opt/puppet/sbin/refresh-mcollective-metadata
+# Puppet Name: cron.puppet.onetime
+#9,39 * * * * /opt/puppet/bin/puppet_agent_run.sh > /dev/null
+and disable Zabbix agent
+
+Please check if puppet_agent_run.sh is not running before Zabbix is disabled to prevent enabling Zabbix by Puppet.
+
+svcadm disable zabbix-agent
+
+Note:
+
+Luactivate[edit]
+Activate the new BE (s10_u11_r3)
+
+Note: Make sure to keep a copy of next output. We will need this info if the new BE fails to boot.
+
+Luactivate (M5000, T3 and T4)[edit]
+# luactivate s10_u11_r3
+A Live Upgrade Sync operation will be performed on startup of boot environment <s10_u11_r3>.
+WARNING: <3> packages failed to install properly on boot environment <s10_u11_r3>.
+INFORMATION: </var/sadm/system/data/upgrade_failed_pkgadds> on boot 
+environment <s10_u11_r3> contains a list of packages that failed to 
+upgrade or install properly. Review the file before you reboot the system 
+to determine if any additional system maintenance is required.
+zlogin: Could not chdir to home directory /root: No such file or directory
+zlogin: Could not chdir to home directory /root: No such file or directory
+WARNING: The following files have changed on both the current boot 
+environment <s10_u11_r1> zone <sz0792> and the boot environment to be 
+activated <s10_u11_r3>:
+INFORMATION: The files listed above are in conflict between the current 
+boot environment <s10_u11_r2> zone <sz0792> and the boot environment to be 
+activated <s10_u11_r3>. These files will not be automatically synchronized 
+from the current boot environment <s10_u11_r2> when boot environment 
+<s10_u11_r3> is activated.
+zlogin: Could not chdir to home directory /root: No such file or directory
+
+**********************************************************************
+
+The target boot environment has been activated. It will be used when you
+reboot. NOTE: You MUST NOT USE the reboot, halt, or uadmin commands. You
+MUST USE either the init or the shutdown command when you reboot. If you
+do not use either init or shutdown, the system will not boot using the
+target BE.
+
+**********************************************************************
+
+In case of a failure while booting to the target BE, the following process
+needs to be followed to fallback to the currently working boot environment:
+
+1. Enter the PROM monitor (ok prompt).
+
+2. Change the boot device back to the original boot environment by typing:
+
+     setenv boot-device disk
+
+3. Boot to the original boot environment by typing:
+
+     boot
+
+**********************************************************************
+
+Modifying boot archive service
+Activation of boot environment <s10_u11_r3> successful.
+Luactivate (T5240)[edit]
+[root@s00143:NODB ~]# luactivate s10_u11_r3
+A Live Upgrade Sync operation will be performed on startup of boot environment <s10_u11_r3>.
+
+
+**********************************************************************
+
+The target boot environment has been activated. It will be used when you
+reboot. NOTE: You MUST NOT USE the reboot, halt, or uadmin commands. You
+MUST USE either the init or the shutdown command when you reboot. If you
+do not use either init or shutdown, the system will not boot using the
+target BE.
+
+**********************************************************************
+
+In case of a failure while booting to the target BE, the following process
+needs to be followed to fallback to the currently working boot environment:
+
+1. Enter the PROM monitor (ok prompt).
+
+2. Boot the machine to Single User mode using a different boot device
+(like the Solaris Install CD or Network). Examples:
+
+     At the PROM monitor (ok prompt):
+     For boot to Solaris CD:  boot cdrom -s
+     For boot to network:     boot net -s
+
+3. Mount the Current boot environment root slice to some directory (like
+/mnt). You can use the following commands in sequence to mount the BE:
+
+     zpool import rpool2
+     zfs inherit -r mountpoint rpool2/ROOT/s10_u11_r2
+     zfs set mountpoint=<mountpointName> rpool2/ROOT/s10_u11_r2
+     zfs mount rpool2/ROOT/s10_u11_r2
+
+4. Run <luactivate> utility with out any arguments from the Parent boot
+environment root slice, as shown below:
+
+     <mountpointName>/sbin/luactivate
+
+5. luactivate, activates the previous working boot environment and
+indicates the result.
+6. umount /mnt
+7. zfs set mountpoint=/ rpool2/ROOT/s10_u11_r2
+8. Exit Single User mode and reboot the machine.
+
+**********************************************************************
+
+Modifying boot archive service
+Activation of boot environment <s10_u11_r3> successful.
+If activation is successful the global zone has to be rebooted
+
+Prepare for reboot[edit]
+First halt all non global zones
+
+# zoneadm list -cv
+# zoneadm -z <zonename> halt
+# zoneadm list -cv
+Stop the screen session
+
+# exit
+Reboot[edit]
+Login on the console (XSCF/ILOM) and reboot the server with init 6
+
+# init 6
+Note: The first boot of a new BE will take more time.
+
+The first time you boot from a newly created BE, Live Upgrade software synchronizes this BE with the BE that was last active. Synchronize here means that certain system files and directories are copied from the last-active BE to the BE being booted. (See manpage for synclist).
+
+Check LU after reboot
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r2                 yes      no     no        yes    -
+s10_u11_r3                 yes      yes    yes       no     -
+Check for services and wait until all the services are started properly.
+
+# svcs -xv
+svc:/milestone/multi-user:default (multi-user milestone)
+ State: offline* transitioning to online since Wed Feb 12 14:14:30 2014
+Reason: Start method is running.
+   See: http://sun.com/msg/SMF-8000-C4
+   See: man -M /usr/share/man -s 1M init
+   See: /var/svc/log/milestone-multi-user:default.log
+Impact: 6 dependent services are not running:
+        svc:/system/boot-config:default
+        svc:/application/stosreg:default
+        svc:/application/sthwreg:default
+        svc:/milestone/multi-user-server:default
+        svc:/system/zones:default
+        svc:/system/iscsitgt:default
+Check all the zone status and zonepath. If zonepath is incorrect, correct it by following the instructions under workaround.
+
+# zoneadm list -cv
+  ID NAME             STATUS     PATH                           BRAND    IP
+   0 global           running    /                              native   shared
+  25 sz0726           running    /sz0726-sys/sz0726-root        native   shared
+  26 sz0727           running    /sz0727-sys/sz0727-root        native   shared
+  27 sz0653           running    /sz0653-sys/sz0653-root        native   shared
+  28 sz0652           running    /sz0652-sys/sz0652-root        native   shared
+Install KPNpatchb package[edit]
+You can install the package using the following steps. Mount jet-server directory:
+
+root@s00110# mount -F nfs -o ro,vers=3 s00133.mgt.gen.local:/JET /cdrom
+Go to KPNpatchb directory:
+
+/cdrom/patches/KPNpatchb43
+Install the package:
+
+pkgadd -d . KPNpatchb
+This package is an empty package only used by our scripting (for example solaris patch bundle 44) for checking and inventory and is harmless for the system.
+
+Workarounds After[edit]
+This procedure has been tested with previuos levels of the patches listed in Check LU Software. The liveupgrade patches still contain some minor bugs. In future releases, these bugs might be solved, but at the moment the following workarounds are needed.
+
+Mail configuration checks[edit]
+If sendmail is updated, the sendmail.cf can also change. In this situation the old sendmail configuration is saved as sendmail.cf.old during the install. Do the below steps on global and local zones.
+
+# ls -la /etc/mail/sendmail.cf*
+# diff /etc/mail/sendmail.cf /etc/mail/sendmail.cf.old
+The orininal sendmail configuration can be restored from this backup and a restart of sendmail.
+
+# cd /etc/mail
+# cp -p sendmail.cf sendmail.cf.new
+# cp -p sendmail.cf.old sendmail.cf
+# svcadm disable sendmail
+# svcadm enable sendmail
+In most cases only servers or zones that use mail-relay will be affected. This is configured in sendmail.cf via:
+
+DSsat-relay.telecom.ptt.nl
+/etc/hostname file missing in localzones[edit]
+Check if all /etc/hostname files are present on the localzones. If not, copy the files from the /var/tmp/liveupgrade/hostnamefiles directory
+
+# ls -l /var/tmp/liveupgrade/hostnamefiles/sz*/hostname*
+
+# for z in `zoneadm list -i | grep -v global`
+do 
+    zp=`zonecfg -z $z info zonepath | awk '{print $2}'`
+    ls -l $zp/root/etc/hostname* 2>/dev/null
+done
+/etc/.UNCONFIGURED[edit]
+For some reason, the /etc/.UNCONFIGURED file is touched during the Solaris update on all localzones. Remove the file from all localzones.
+
+# for z in `zoneadm list -i | grep -v global`
+do 
+    zp=`zonecfg -z $z info zonepath | awk '{print $2}'`
+    rm $zp/root/etc/.UNCONFIGURED 2>/dev/null
+done
+legacy mountpoint of localzone mounted on global[edit]
+See Oracle SR 3-5614854041
+After the reboot, not all localzones are booted automatically.
+
+Check which localzones where running before the liveupgrade
+
+# cat /var/tmp/liveupgrade/zoneadm_state_before
+Check current localzone state
+
+# zoneadm list -cv
+Probably not all localzones are booted automatically after the reboot, try to boot the localzone, e.g.
+
+# zoneadm -z sz9990 boot
+zoneadm: zone 'sz9990': "/usr/lib/fs/zfs/mount -o rw,nodevices sz9990-app/u01 /sz9990-sys/sz9990-root/root/u01" failed with exit code 1
+zoneadm: zone 'sz9990': call to zoneadmd failed
+If you get this error, the zfs dataset (e.g. sz9990-app/u01) of the localzone is probably mounted on the globalzone.
+
+# df -h | grep sz9990-app
+sz9990-app/u01         9.8G    24K   9.8G     1%    /u01
+If the sz9990-app/u01 is mounted on the globalzone. Umount the zfs dataset and reboot the localzone.
+
+# umount sz9990-app/u01
+# zoneadm -z sz9990 boot
+[root@s00238:NODB ~]# zoneadm list -cv  | grep sz9990
+   5 sz9990           running    /sz9990-sys/sz9990-root        native   excl
+zfs properties not correct on new BE[edit]
+After the reboot, not all ZFS property values are set correctly on the new BE. This is one of the issues reported in Oracle SR 3-5641955181
+
+Probably n/a for newer versions.
+
+# zfs get quota,mountpoint rpool2/ROOT/s10_u11_r3/var/core
+NAME                            PROPERTY  VALUE  SOURCE
+rpool2/ROOT/s10_u11_r3/var/core quota     none   default
+rpool2/ROOT/s10_u11_r3/var/core mountpoint legacy local
+Quota should be set to 8G
+Mountpoint should be set to inherit
+
+# zfs set quota=8G rpool2/ROOT/s10_u11_r3/var/core
+# zfs inherit mountpoint rpool2/ROOT/s10_u11_r3/var/core
+#  zfs get quota,mountpoint  rpool2/ROOT/s10_u11_r3/var/core
+NAME                            PROPERTY    VALUE       SOURCE
+rpool2/ROOT/s10_u11_r3/var/core quota       8G          local
+rpool2/ROOT/s10_u11_r3/var/core mountpoint  /var/core   inherited from rpool2/ROOT/s10_u11_r3
+# init 6
+zfs fileset(s) not mounted after reboot[edit]
+After reboot, multi user is not initiated because of zfs errors. Check with svcs -vx which services are not running:
+
+[root@s00175:NODB ~]# svcs -vx
+svc:/system/filesystem/local:default (local file system mounts)
+ State: maintenance since Mon Sep 03 00:46:45 2012
+Reason: Start method exited with $SMF_EXIT_ERR_FATAL.
+   See: http://sun.com/msg/SMF-8000-KS
+   See: /var/svc/log/system-filesystem-local:default.log
+Impact: 40 dependent services are not running:
+        svc:/application/psncollector:default
+        svc:/system/webconsole:console
+        svc:/system/filesystem/autofs:default
+        svc:/system/system-log:default
+In this case, the root cause is the filesystem service. Check with zfs mount -a which filesystem is causing the problem.
+
+[root@s00175:NODB ~]# zfs mount -a
+cannot mount '/sz0940-sys/sz0940-root': directory is not empty
+Check why the mountpoint is not empty. If necessary, move the files or folders within the mountpoint to a different location as a backup
+
+[root@s00175:NODB ~]# cd /sz0940-sys/sz0940-root
+[root@s00175:NODB sz0940-root]# ls -tlr
+total 11
+drwxr-xr-x   2 root     root           2 Sep  2 13:15 lu
+drwxr-xr-x   8 root     root           8 Sep  2 15:44 root
+drwxr-xr-x  12 root     sys           50 Sep  2 15:44 dev
+
+[root@s00175:NODB sz0940-root]# mkdir /var/tmp/sz0940
+[root@s00175:NODB sz0940-root]# mv lu /var/tmp/sz0940/
+[root@s00175:NODB sz0940-root]# mv root /var/tmp/sz0940/
+[root@s00175:NODB sz0940-root]# mv dev /var/tmp/sz0940/
+[root@s00175:NODB sz0940-root]# ls -tlr
+total 0
+[root@s00175:NODB /]# zfs mount -a
+If zfs mount -a finishes without errors, reboot the host (using init 6) to check if the problem is solved.
+
+Final reboot[edit]
+Perform a reconfiguration reboot[edit]
+Reboot from OS:
+
+# reboot -- -r
+Alternative reboot methods are:
+
+From OK prompt
+
+# OK: boot -r
+Or create file /reconfigure before performing a server reboot
+
+# touch /reconfigure
+Check After[edit]
+LU[edit]
+Check that the new BE is active
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r2                 yes      no     no        yes    -
+s10_u11_r3                 yes      yes    yes       no     -
+Local zones[edit]
+Verify that all zones, that should be running, are running
+
+# cat /var/tmp/liveupgrade/zoneadm_state_before
+
+# zoneadm list -cv
+ZFS filesystems[edit]
+# zfs list
+
+Sample output (upgrade from s10_u11_r1 to s10_u11_r2)
+
+
+# zfs list
+NAME                                USED  AVAIL  REFER  MOUNTPOINT
+rpool                              74.4G  59.5G    96K  /rpool
+rpool/ROOT                         9.24G  59.5G    21K  legacy
+rpool/ROOT/s10_u11_r1              9.24G  59.5G  9.24G  /
+rpool/ROOT/s10_u11_r1/core           31K  59.5G    31K  /var/core
+rpool/dump                         32.0G  59.5G  32.0G  -
+rpool/export                       1.15G  59.5G    22K  /export
+rpool/export/home                  1.15G  59.5G  1.15G  /export/home
+rpool/swap                         32.0G  59.5G  32.0G  -
+rpool2                             74.3G  59.5G    96K  /rpool2
+rpool2/ROOT                        10.3G  59.5G    18K  legacy
+rpool2/ROOT/s10_u11_r2             10.3G  59.5G  10.3G  /
+rpool2/ROOT/s10_u11_r2/core          31K  8.00G    31K  /core
+rpool2/core                          23K  8.00G    23K  /var/core
+rpool2/dump                        32.0G  59.5G  32.0G  -
+rpool2/swap                        32.0G  59.5G  32.0G  -
+sz0652-app                         27.7G   112G    31K  /sz0652-app
+sz0652-app/admin                    234M  9.77G   234M  legacy
+sz0652-app/home                    1.74M   112G  1.74M  legacy
+sz0652-app/product                 21.5G  8.47G  21.5G  legacy
+sz0652-app/tmp                     4.50G  7.50G  4.50G  legacy
+sz0652-app/u01                     1.41G   112G  1.41G  legacy
+sz0652-sys                         7.49G  35.6G    36K  /sz0652-sys
+sz0652-sys/sz0652-root             7.48G  35.6G  6.65G  /sz0652-sys/sz0652-root
+sz0652-sys/sz0652-root@s10_u11_r2   850M      -  6.04G  -
+sz0652-sys/sz0652-root-s10_u11_r1  13.1M  35.6G  6.04G  /sz0652-sys/sz0652-root-s10_u11_r1
+sz0653-app                         20.7G   119G    31K  /sz0653-app
+sz0653-app/admin                    331M  9.68G   331M  legacy
+sz0653-app/home                    1.74M   119G  1.74M  legacy
+sz0653-app/product                 14.4G  15.6G  14.4G  legacy
+sz0653-app/tmp                     4.50G  7.50G  4.50G  legacy
+sz0653-app/u01                     1.41G   119G  1.41G  legacy
+sz0653-sys                         7.45G  35.6G    36K  /sz0653-sys
+sz0653-sys/sz0653-root             7.42G  35.6G  6.59G  /sz0653-sys/sz0653-root
+sz0653-sys/sz0653-root@s10_u11_r2   847M      -  5.99G  -
+sz0653-sys/sz0653-root-s10_u11_r1  28.0M  35.6G  5.99G  /sz0653-sys/sz0653-root-s10_u11_r1
+sz0654-app                         16.4G   123G    21K  /sz0654-app
+sz0654-app/admin                   3.24G  6.76G  3.24G  legacy
+sz0654-app/home                    12.1M  20.0G  12.1M  legacy
+sz0654-app/product                 8.36G  21.6G  8.36G  legacy
+sz0654-app/tmp                     4.47G  7.53G  4.47G  legacy
+sz0654-sys                         20.4G  22.7G    29K  /sz0654-sys
+sz0654-sys/sz0654-root             20.4G  22.7G  19.5G  /sz0654-sys/sz0654-root
+sz0654-sys/sz0654-root@s10_u11_r2   842M      -  18.9G  -
+sz0654-sys/sz0654-root-s10_u11_r1   603K  22.7G  18.9G  /sz0654-sys/sz0654-root-s10_u11_r1
+sz0656-app                         18.0G   122G    21K  /sz0656-app
+sz0656-app/admin                   23.8M  9.98G  23.8M  legacy
+sz0656-app/home                     189M   122G   189M  legacy
+sz0656-app/product                 13.3G  16.7G  13.3G  legacy
+sz0656-app/tmp                     4.50G  7.50G  4.50G  legacy
+sz0656-app/u01                       21K   122G    21K  legacy
+sz0656-sys                         8.25G  34.8G    29K  /sz0656-sys
+sz0656-sys/sz0656-root             8.24G  34.8G  7.42G  /sz0656-sys/sz0656-root
+sz0656-sys/sz0656-root@s10_u11_r2   840M      -  6.82G  -
+sz0656-sys/sz0656-root-s10_u11_r1   522K  34.8G  6.82G  /sz0656-sys/sz0656-root-s10_u11_r1
+sz0726-app                         53.0G  86.8G    21K  /sz0726-app
+sz0726-app/home                    1.23G  86.8G  1.23G  legacy
+sz0726-app/siebel                  3.09G  86.8G  3.09G  legacy
+sz0726-app/u01                     48.6G  86.8G  48.6G  legacy
+sz0726-sys                         10.3G  32.7G    29K  /sz0726-sys
+sz0726-sys/sz0726-root             10.3G  32.7G  9.46G  /sz0726-sys/sz0726-root
+sz0726-sys/sz0726-root@s10_u11_r2   853M      -  8.86G  -
+sz0726-sys/sz0726-root-s10_u11_r1  21.1M  32.7G  8.86G  /sz0726-sys/sz0726-root-s10_u11_r1
+sz0727-app                         41.6G  98.2G    22K  /sz0727-app
+sz0727-app/home                    13.8G  98.2G  13.8G  legacy
+sz0727-app/siebel                  22.8G  98.2G  22.8G  legacy
+sz0727-app/u01                     5.02G  98.2G  5.02G  legacy
+sz0727-sys                         11.9G  31.2G    29K  /sz0727-sys
+sz0727-sys/sz0727-root             11.9G  31.2G  11.0G  /sz0727-sys/sz0727-root
+sz0727-sys/sz0727-root@s10_u11_r2   856M      -  10.4G  -
+sz0727-sys/sz0727-root-s10_u11_r1  14.9M  31.2G  10.4G  /sz0727-sys/sz0727-root-s10_u11_r1
+Verify globalzone after[edit]
+# rm /var/tmp/liveupgrade/verify_global_after
+# /mnt/repository/solaris/scripts/verify_zone.sh -v | tee -a /var/tmp/liveupgrade/verify_global_after
+Check for FAILED items.
+Note: not all FAILED items are a problem. E.g. When this system is upgraded to Solaris 10 U10, the verify_zone.sh script will complain about the "LU current", because the new values are not defined in the verify_zone configuration files yet.
+
+See Troubleshooting for solving some of the known issues.
+
+Check errors in /var/adm/messages (since the last reboot)
+
+# egrep -i 'err|fail|crit' /var/adm/messages
+
+Check ssh connection to the globalzone from your workstation or steppingstone (s00110).
+
+# ssh s00238-mgt
+Verify zonepaths after[edit]
+Check zonepaths are correct <zone>-sys/<zone>-root
+
+# zoneadm list -vc
+
+  ID NAME             STATUS     PATH                           BRAND    IP
+   0 global           running    /                              native   shared
+   1 sz0793           running    /sz0793-sys/sz0793-root        native   excl
+   2 sz0794           running    /sz0794-sys/sz0794-root        native   excl
+   3 sz0795           running    /sz0795-sys/sz0795-root        native   excl
+   4 sz0796           running    /sz0796-sys/sz0796-root        native   excl
+Also check zonepath in zonecfg
+
+# for zone in $(zoneadm list -i| grep sz)
+do 
+   zonecfg -z $zone info zonepath
+done
+
+zonepath: /sz0793-sys/sz0793-root
+zonepath: /sz0794-sys/sz0794-root
+zonepath: /sz0795-sys/sz0795-root
+zonepath: /sz0796-sys/sz0796-root
+Also check zonepath content to ensure this are the actually upgraded zonepaths:
+
+$ uname -a
+SunOS s00153 5.10 Generic_150400-09 sun4v sparc sun4v
+E.g. check for the kernel patch in the zonepath:
+
+# for z in `zoneadm list|grep -v global`; do echo ===$z===; ls -l /$z-sys/$z-root/root/var/sadm/patch|grep 150400-09; done
+Check manually if any zones are missed in the above script.
+
+# ls -l /sz0792-sys/sz0792-root/root/var/sadm/patch|grep "150400-09"
+drwxr-xr-x   2 root     root           6 Feb 11 16:59 150400-09
+And check patchlevel of zone:
+
+# for z in `zoneadm list|grep -v global`; do echo ===$z===; zlogin $z showrev -p | grep "Patch: 150400-09"; done
+Check manually if any zones are missed in the above script.
+
+ 
+# zlogin sz0792 showrev -p | grep "Patch: 150400-09"
+Patch: 150400-09 Obsoletes: 148174-01, 148377-01, 149502-01, . . .
+Note: If the new kernel patch is not found, further investigation is necessary.
+
+Verify Filesytems after[edit]
+Collect ZFS filesystem info after GO Live
+
+# 1. counts for quick check
+
+for i in $(zoneadm list | grep sz | sort)
+do
+  printf "$i "
+  zlogin $i df -h -F zfs | wc -l
+done >/var/tmp/liveupgrade/verify_filesystems_count_after
+
+# 2. details for extended check
+
+for i in $(zoneadm list | grep sz | sort)
+do
+   echo == $i ZFS filesystems ==
+   zlogin $i df -h -F zfs |awk '{ print $1 " " $2 " " $6}' 
+done > /var/tmp/liveupgrade/verify_filesystems_after
+And compare with filesystems before upgrade:
+
+# diff /var/tmp/liveupgrade/verify_filesystems_count_before /var/tmp/liveupgrade/verify_filesystems_count_after
+
+and 
+
+# diff /var/tmp/liveupgrade/verify_filesystems_before /var/tmp/liveupgrade/verify_filesystems_after
+Verify DNS
+
+# for z in `zoneadm list|grep -v global`; do echo ===$z===;cat /$z-sys/$z-root/root/etc/nsswitch.conf|grep dns; done
+
+---------------------
+hosts:      files dns
+ipnodes:    files dns
+Verify nodename file.
+The hostname name should be proper in the file /etc/nodename (e.g sz0845). If file doen't exist, no action is required.
+
+# for z in `zoneadm list|grep -v global`; do echo ===$z===; cat /$z-sys/$z-root/root/etc/nodename; done
+Verify /etc/hosts file
+
+# for z in `zoneadm list|grep -v global`; do echo ===$z===; cat /$z-sys/$z-root/root/etc/hosts; done
+Verify LDOM version after the upgrade[edit]
+LDOM version should be 3.1.0.0.24. Applicable for T5240, T3 and T4.
+
+# pkginfo -l SUNWldm
+  PKGINST:  SUNWldm
+      NAME:  LDoms Manager software
+  CATEGORY:  application
+      ARCH:  sparc.sun4v
+   VERSION:  3.1.0.0.24,REV=2013.07.23.12.23
+   BASEDIR:  /
+    VENDOR:  Oracle Corporation
+      DESC:  Oracle VM Server for SPARC - Virtualization for SPARC T-Series
+    PSTAMP:  scapen-cs10-020140225094928
+  INSTDATE:  Dec 19 2014 18:32
+   HOTLINE:  Please contact your local service provider
+    STATUS:  completely installed
+     FILES:       97 installed pathnames
+                  18 shared pathnames
+                  27 directories
+                  28 executables
+                8081 blocks used (approx)
+
+Verify ldm config info for T Series Servers After[edit]
+# ldm list-constraints -p > /var/tmp/liveupgrade/list-constraints-p_state_after
+And check for any differecne before upgrade:
+
+# diff /var/tmp/liveupgrade/list-constraints-p_state_before /var/tmp/liveupgrade/list-constraints-p_state_after
+Verify localzones after[edit]
+Check ssh connection to all non global-zone from your workstation or steppingstone (s00110).
+
+# ssh sz9992
+
+Run verify script
+
+# rm /var/tmp/liveupgrade/verify_sz*_after
+# for i in $(zoneadm list |grep -v global)
+do
+echo $i
+zlogin $i /mnt/repository/solaris/scripts/verify_zone.sh -v | tee -a /var/tmp/liveupgrade/verify_${i}_after
+echo
+done
+Check for FAILED items.
+
+See Troubleshooting for solving some of the known issues.
+
+Sometimes the repository can not be mounted and you'll get a "permission denied" error. Run the script again againts the localzone, e.g.
+
+# zlogin sz9992 /mnt/repository/solaris/scripts/verify_zone.sh -v | tee -a /var/tmp/liveupgrade/verify_sz9992_after
+Enable Puppet (and Zabbix agent)[edit]
+Afte the system is checked, check for puppet. The following 4 lines should in the below order. Please remove/comment if you find any additional entries for these lines.
+
+# Puppet Name: pe-mcollective-metadata
+0,15,30,45 * * * * /opt/puppet/sbin/refresh-mcollective-metadata
+# Puppet Name: cron.puppet.onetime
+9,39 * * * * /opt/puppet/bin/puppet_agent_run.sh > /dev/null
+Service zabbix-agent will be automatically enabled by Puppet.
+
+After Actions offshore (after stability)[edit]
+At the end of the agreed stability period for a possible fallback, the following actions need to be done
+
+Check / Correct boot-device setting[edit]
+Check that both devices of the mirror fo the rpool are part of the boot-device setting.
+
+$ eeprom boot-device
+boot-device=/pci@400/pci@2/pci@0/pci@4/scsi@0/disk@w5000cca01274c721,0:a /pci@400/pci@2/pci@0/pci@4/scsi@0/disk@w5000cca0127482d9,0:a
+Check and -if neccesary- correct the setting for boot-device using the next wiki
+
+Correcting boot-device[edit]
+See: Check_and_correct_boot-device
+
+Delete old Boot Environment[edit]
+First check that the old BE is not active and has Can Delete set to yes
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r1                 yes      no     no        yes    -
+s10_u11_r2                 yes      yes    yes       no     -
+
+Note: Also verify that all the mount points are correct before running ludelete. There should be no files mounted on /a or /.alt.s10_u9_be.
+
+
+Remove the old environment with ludelete
+
+# ludelete s10_u11_r1                  
+
+Updating boot environment configuration database.
+Updating boot environment description database on all BEs.
+Updating all boot environment configuration databases.
+
+And check.
+
+# lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u11_r2                 yes      yes    yes       no     -
+Upgrade ZFS pools[edit]
+Don't do this in the stability period. If the ZFS pools are upgraded and a fallback is executed, the upgraded pools are not accessible. Only do this after the stability period, when a fallback is not needed anymore.
+
+Example:
+
+Check zpool status. Do this for all zpools
+
+# zpool list
+
+# zpool status rpool2
+  pool: rpool2
+state: ONLINE
+status: The pool is formatted using an older on-disk format.  The pool can
+        still be used, but some features are unavailable.
+action: Upgrade the pool using 'zpool upgrade'.  Once this is done, the
+        pool will no longer be accessible on older software versions.
+scan: none requested
+..
+errors: No known data errors
+Get current version
+
+# zpool get version rpool2
+Upgrade all zpools
+
+# zpool upgrade rpool2
+Successfully upgraded 'rpool2'
+Note: Start of a zpool upgrade -a will upgrade all zpools.
+
+# zpool upgrade -a
+Get new version
+
+# zpool get version rpool2
+After Actions (onshore)[edit]
+verify_zone.sh script[edit]
+When all upgrades are finished, the reference files of the verify_zone.sh script should be updated.
+
+# cd /mnt/orepository/solaris/config/verify
+# vi reference*
+Update the files with the right information, e.g.:
+obp:version
+lu:current
+fcinfo:firmware
+version:update
+Check the files in svn
+Update the files on /mnt/repository
+
+Fallback[edit]
+In case of a decision that we have to go back to the original BE do this.
+Activate the old BE (s10_u11_r1)
+
+# BOOT_MENU_FILE="menu.lst"
+# export BOOT_MENU_FILE
+# svcadm disable -t ldmd  (for a system running Logical Domain)
+# luactivate s10_u11_r1
+If activation is successful, halt all localzones
+
+# zoneadm list -cv
+# zoneadm -z <zonename> halt
+# zoneadm list -cv
+Login on the console (XSCF/ILOM) and reboot the server with init 6
+
+# init 6
+After the reboot, perform the checks from paragraph Check After.
+
+Another way to fallback to the original BE is:
+
+# init 0
+
+ok boot -L
+Resetting...
+.
+.
+Rebooting with command: boot -L
+Boot device: /pci@0,600000/pci@0/pci@8/pci@0/scsi@1/disk@0:a  File and args: -L
+1 s10_u11_r1
+Select environment to boot: [ 1 - 1 ]: 1
+
+To boot the selected entry, invoke:
+boot [<root-device>] -Z rpool/ROOT/s10_u11_r1
+Program terminated
+{0} ok boot -Z rpool/ROOT/s10_u11_r1
+Resetting...
+The server boots now up with the "s10_u11_r1" BE. You can check the result in /etc/release.
+
+Troubleshooting[edit]
+Verify_zone.sh[edit]
+hostname (check-hostname)[edit]
+"Hostname sz0747-app-bck could not be fully qualified." This is caused by an incorrect /etc/nodename file on this zone after live upgrade
+
+# cat /etc/nodename
+sz0747-app-bck
+Also last entry in /etc/hosts is wrong:
+
+[root@sz0747-app-bck:NODB ~]# grep sz0747 /etc/hosts
+10.68.7.242  sz0747.kpnnl.local sz0747
+10.61.7.242  sz0747-bck.bck.gen.local sz0747-bck
+10.61.7.242  sz0747-app-bck  loghost
+To correct this:
+
+Specify the correct hostname (sz0747) in /etc/nodename
+Remove the wrong entry in /etc/hosts
+Finally reboot the localzone
+Zpool status[edit]
+The "Zpool status" check might fail if ZFS software is updated. Check the status of the zpools.
+
+# zpool status -x
+..
+status: The pool is formatted using an older on-disk format.  The pool can
+        still be used, but some features are unavailable.
+action: Upgrade the pool using 'zpool upgrade'.  Once this is done, the
+        pool will no longer be accessible on older software versions.
+
+..
+Ignore these messages and check if all zpools are online
+
+# zpool status -x | grep state | grep -v ONLINE
+NTP[edit]
+The "NTP" check might fail, because ntp might not be synchronized yet after the reboot. Check again later with the ntpq command.
+
+# ntpq -pn  | grep "*"
+*10.68.146.18    .GPS.            1 u   47   64  377     0.69    0.032    0.06
+Solaris update version[edit]
+The "Solaris update version" check will fail if Solaris is updated (e.g. from update 9 to update 10), because the configuration files used by verify_zone.sh are not updated yet. Check current update version in /etc/release.
+
+# head -1 /etc/release
+                  Oracle Solaris 10 1/13 s10s_u11wos_24a SPARC
+LU current[edit]
+The "LU current" check will fail, because the current LU name is changed during this procedure and the configuration files used by verify_zone.sh are not updated yet.
+
+LU[edit]
+Activating a BE can result in this error message[edit]
+$ luactivate s10_u7_be
+ERROR: cannot mount '/.alt.tmp.b-cO.mnt/var': directory is not empty
+ERROR: cannot mount mount point </.alt.tmp.b-cO.mnt/var> device <rpool/ROOT/s10_u7_be/var>
+ERROR: failed to mount file system <rpool/ROOT/s10_u7_be/var> on </.alt.tmp.b-cO.mnt/var>
+ERROR: unmounting partially mounted boot environment file systems
+ERROR: cannot mount boot environment by icf file </etc/lu/ICF.1>
+ERROR: Unable to mount the boot environment <s10_u7_be>.
+Solve this problem like this:
+
+$ cd /.alt.tmp.b-cO.mnt/var
+$ ls -tlr
+total 3
+drwxr-xr-x   2 root     root           2 Oct 28 11:17 tmp
+[\u@\h:NODB \W]\$ df -h .
+Filesystem             size   used  avail capacity  Mounted on
+rpool/ROOT/s10_u7_be   274G   3.9G   209G     2%    /.alt.tmp.b-cO.mnt
+$ cd tmp
+$ ls -tlr
+total 0
+$ cd ..
+$ rm -rf tmp
+$ pwd
+/.alt.tmp.b-cO.mnt/var
+$ ls -tlr
+total 0
+$ cd /
+$ umount -f /.alt.tmp.b-cO.mnt/var
+umount: warning: /.alt.tmp.b-cO.mnt/var not in mnttab
+umount: /.alt.tmp.b-cO.mnt/var not mounted
+$ luactivate s10_u7_be
+A Live Upgrade Sync operation will be performed on startup of boot environment <s10_u7_be>.
+zlogin: Could not chdir to home directory /root: No such file or directory
+WARNING: The following files have changed on both the current boot
+environment <s10_u9_be> zone <test1> and the boot environment to be
+activated <s10_u7_be>:
+   /var/mail/sys
+INFORMATION: The files listed above are in conflict between the current
+boot environment <s10_u9_be> zone <test1> and the boot environment to be
+activated <s10_u7_be>. These files will not be automatically synchronized
+from the current boot environment <s10_u9_be> when boot environment
+<s10_u7_be> is activated.
+
+
+**********************************************************************
+
+The target boot environment has been activated. It will be used when you
+reboot. NOTE: You MUST NOT USE the reboot, halt, or uadmin commands. You
+MUST USE either the init or the shutdown command when you reboot. If you
+do not use either init or shutdown, the system will not boot using the
+target BE.
+
+**********************************************************************
+
+In case of a failure while booting to the target BE, the following process
+needs to be followed to fallback to the currently working boot environment:
+
+1. Enter the PROM monitor (ok prompt).
+
+2. Change the boot device back to the original boot environment by typing:
+
+     setenv boot-device /pci@10,600000/pci@0/pci@8/pci@0/scsi@1/disk@1,0:a
+
+3. Boot to the original boot environment by typing:
+
+     boot
+
+**********************************************************************
+
+Modifying boot archive service
+Activation of boot environment <s10_u7_be> successful.
+$ lustatus
+Boot Environment           Is       Active Active    Can    Copy
+Name                       Complete Now    On Reboot Delete Status
+-------------------------- -------- ------ --------- ------ ----------
+s10_u7_be                  yes      no     yes       no     -
+s10_u9_be                  yes      yes    no        no     -
+After reboot solaris update 7 server aggregation may fail[edit]
+Look at the status of the aggregations
+
+# dladm show-aggr -L
+key: 1 (0x0001) policy: L4      address: 0:21:28:d6:49:70 (auto)
+                LACP mode: active       LACP timer: long
+    device    activity timeout aggregatable sync  coll dist defaulted expired
+    bge0      active   long    yes          no    no   no   yes       no
+    bge1      active   long    yes          no    no   no   yes       no
+key: 2 (0x0002) policy: L4      address: 0:21:28:d6:41:36 (auto)
+                LACP mode: active       LACP timer: long
+    device    activity timeout aggregatable sync  coll dist defaulted expired
+    bge2      active   long    yes          no    no   no   yes       no
+    bge3      active   long    yes          no    no   no   yes       no
+key: 3 (0x0003) policy: L4      address: 0:21:28:da:a2:2 (auto)
+                LACP mode: active       LACP timer: long
+    device    activity timeout aggregatable sync  coll dist defaulted expired
+    nxge0     active   long    yes          yes   yes  yes  no        no
+    nxge1     active   long    yes          yes   yes  yes  no        no
+    nxge4     active   long    yes          yes   yes  yes  no        no
+    nxge5     active   long    yes          yes   yes  yes  no        no
+key: 4 (0x0004) policy: L4      address: 0:21:28:c4:69:3a (auto)
+                LACP mode: active       LACP timer: long
+    device    activity timeout aggregatable sync  coll dist defaulted expired
+    nxge8     active   long    yes          yes   yes  yes  no        no
+    nxge9     active   long    yes          yes   yes  yes  no        no
+    nxge12    active   long    yes          yes   yes  yes  no        no
+    nxge13    active   long    yes          yes   yes  yes  no        no
+To fix aggregation 1
+
+# dladm remove-aggr -d bge0 1
+# dladm add-aggr -d bge0 1
+# dladm remove-aggr -d bge1 1
+# dladm add-aggr -d bge1 1
+
+# dladm show-aggr -L
+
+key: 1 (0x0001) policy: L4      address: 0:21:28:d6:49:70 (auto)
+                LACP mode: active       LACP timer: long
+    device    activity timeout aggregatable sync  coll dist defaulted expired
+    bge0      active   long    yes          yes   yes  yes  no        no
+    bge1      active   long    yes          yes   yes  yes  no        no
+key: 2 (0x0002) policy: L4      address: 0:21:28:d6:41:36 (auto)
+                LACP mode: active       LACP timer: long
+    device    activity timeout aggregatable sync  coll dist defaulted expired
+    bge2      active   long    yes          no    no   no   yes       no
+    bge3      active   long    yes          no    no   no   yes       no
+key: 3 (0x0003) policy: L4      address: 0:21:28:da:a2:2 (auto)
+                LACP mode: active       LACP timer: long
+    device    activity timeout aggregatable sync  coll dist defaulted expired
+    nxge0     active   long    yes          yes   yes  yes  no        no
+    nxge1     active   long    yes          yes   yes  yes  no        no
+    nxge4     active   long    yes          yes   yes  yes  no        no
+    nxge5     active   long    yes          yes   yes  yes  no        no
+key: 4 (0x0004) policy: L4      address: 0:21:28:c4:69:3a (auto)
+                LACP mode: active       LACP timer: long
+    device    activity timeout aggregatable sync  coll dist defaulted expired
+    nxge8     active   long    yes          yes   yes  yes  no        no
+    nxge9     active   long    yes          yes   yes  yes  no        no
+    nxge12    active   long    yes          yes   yes  yes  no        no
+    nxge13    active   long    yes          yes   yes  yes  no        no
+Not able to login into Non-globalzones (NGZ) after Patching[edit]
+ssh sessions to the zone are not possible.
+
+svcs -vx shows many network services not running in this zone
+
+sz0279[root@sz0279 ~]# svcs -vx
+svc:/system/sysidtool:net (sysidtool)
+ State: offline since Thu Mar 22 21:40:00 2012
+Reason: Start method is running.
+   See: http://sun.com/msg/SMF-8000-C4
+   See: man -M /usr/man -s 1M sysidtool
+   See: /var/svc/log/system-sysidtool:net.log
+Impact: 31 dependent services are not running:
+        svc:/network/rpc/bind:default
+        svc:/network/nfs/nlockmgr:default
+        svc:/network/nfs/client:default
+.....
+
+svc:/network/rpc/rstat:default (kernel statistics server)
+ State: uninitialized since Thu Mar 22 21:39:53 2012
+Reason: Restarter svc:/network/inetd:default is not running.
+   See: http://sun.com/msg/SMF-8000-5H
+   See: man -M /usr/share/man -s 1M rpc.rstatd
+   See: man -M /usr/share/man -s 1M rstatd
+Impact: 1 dependent service is not running:
+        svc:/application/management/sma:default
+The log for this service will show messages
+
+...
+/etc/.UNCONFIGURED not found. System already configured, /lib/svc/method/sysidtool-net exiting.
+...
+Solution:
+
+Remove file /etc/.UNCONFIGURE in the zone and reboot the zone
+
+# cd /etc
+# ls -la
+# rm .UNCONFIGURE
+
+# zoneadm -z zone-name reboot
+Not able to login into Non-globalzones (NGZ) after Patching 2[edit]
+# ls -l /etc/hostname*
+-rw-------   1 root     root          33 Apr 26 09:33 /etc/hostname.vnet2038021
+-rw-------   1 root     root          46 Apr 26 09:33 /etc/hostname.vnet3038022
+-rw-------   1 root     root          34 Apr 26 09:33 /etc/hostname.vnet3038023
+One of the /etc/hostname file is missing. Create the /etc/hostname..... again and reboot the localzone
+
+Call to zoneadmd failed[edit]
+On 2 servers next error occured after an upgrade
+
+zoneadm -z sz0142 boot
+zoneadm: zone 'sz0142': "/usr/lib/fs/zfs/mount  /sz0142-sys/sz0142-root/root/u01" failed with exit code 1
+zoneadm: zone 'sz0142': call to zoneadmd failed
+Possible explanation: a zoneadm or zonecfg was running during lumount or luupgrade.
+
+Possible workaround:
+
+zfs set mountpoint=/check_sz0142 sz0142-app/u01
+zfs mount sz0142-app/u01
+
+Now ZFS is mounted on /check_sz0142
+
+zfs umount sz0142-app/u01
+zfs set mountpoint=legacy sz0142-app/u01
+
+zoneadm -z sz0142 boot
+--
+Thanks

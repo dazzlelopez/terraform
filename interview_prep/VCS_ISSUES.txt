@@ -1,0 +1,83 @@
+VCS MultiNICB Agent does not work properly with Solaris 10
+The MultiNICB resource goes to FAULTED  state, without any clear reason
+
+Error Message
+
+VCS WARNING V-16-10001-6519 MultiNICB:.....:monitor:Deleting default router (a8fa9fa)
+VCS INFO V-16-1-10307 Resource (Owner: unknown, Group: ....) is offline on .. (Not initiated by VCS)
+
+
+Cause
+
+Starting with Solaris 10 the path of in.mpathd command was changed: if MultiNICB resources were configured to work with previous Solaris release, 
+they will not loger work properly.
+
+The default path was:
+/sbin/in.mpathd
+this is now a symbolic link to:
+/usr/lib/inet/in.mpathd
+
+so must be changed in resource configuration otherwise MultiNICB Agent will not be able to determine if process is running and kill/restart when requested
+
+
+Solution
+
+Change the path of mpathd command with in MultiNICB  resource:
+
+# haconf -makerw
+modify the path:
+# hares -modify <MultiNICB_res> MpathdCommand "/usr/lib/inet/in.mpathd -a"
+# haconf -dump -makero
+then check if the new attribute is properly set:
+#  hares -display <MultiNICB_res> -attribute MpathdCommand
+#Resource               Attribute                         System   Value
+<MultiNICB_res>    MpathdCommand          global     /usr/lib/inet/in.mpathd -a
+
+Restart the Agent on all of cluster nodes
+
+# haagent -stop MultiNICB -sys <node_name>
+# haagent -start MultiNICB -sys <node_name>
+____________________________________________________________________________________________________________________________________________________
+
+VCS Concurrency Violation brief note.
+Concurrency Violation brief note mentioned based on the real scenario.
+
+engineA.log are,
+
+
+
+2014/12/03 06:46:54 VCS INFO V-16-1-10299 Resource App_saposcol (Owner: Unspecified, Group: sapgtsprd) is online on mapibm625 (Not initiated by VCS)
+2014/12/03 06:46:54 VCS ERROR V-16-1-10214 Concurrency Violation:CurrentCount increased above 1 for failover group sapgtsprd
+2014/12/03 06:46:54 VCS NOTICE V-16-1-10233 Clearing Restart attribute for group sapgtsprd on all nodes
+2014/12/03 06:46:55 VCS WARNING V-16-6-15034 (mapibm625) violation:-Offlining group sapgtsprd on system mapibm625
+2014/12/03 06:46:55 VCS INFO V-16-1-50135 User root fired command: hagrp -offline sapgtsprd  mapibm625  from localhost
+2014/12/03 06:46:55 VCS NOTICE V-16-1-10167 Initiating manual offline of group sapgtsprd on system mapibm625
+
+Explanation
+=============
+
+Most service groups are of type failover (the default) meaning it should only run on one system at any one time and it can fail over to another system, 
+so if VCS detects a failover group is running on more than one node then it reports a Concurrency Violation and then tries to offline on the node 
+that VCS did not online it on.
+
+So in your situation resource App_saposcol in group sapgtsprd was onlined on mapibm625 outside of VCS control when it was already online on 
+another system in the cluster so VCS offlined it:
+
+2014/12/03 06:46:55 VCS NOTICE V-16-1-10167 Initiating manual offline of group sapgtsprd on system mapibm625
+
+If group should run on 2 systems at the same time then you should configure group as Parallel (set group attribute Parallel = 1) 
+and then group will run on all systems in the cluster at the same time.
+
+Credit to https://www.veritas.com
+_____________________________________________________________________________________________________________________________________________________________
+
+I just added a DiskGroup to VCS, and VCS offlined everything. Why?
+
+A) The diskgroup you added was probably already imported manually or through VMSA, and without the “-t” option. 
+vxdg import {disk group} VCS imports diskgroups using “-t”, which sets the diskgroup’s noautoimport flag to “on”. 
+vxdg -t import {disk group} So, when you added the diskgroup to VCS, VCS detected the new diskgroup 
+was imported outside of VCS because the noautoimport flag was set to “off”. This is considered a violation, 
+and the DiskGroup Agent monitor script will then offline the entire Service Group. This is a precaution to prevent split brain. 
+You can see a diskgroup’s noautoimport flag by doing: vxprint -at {disk group} If you’ve imported a new diskgroup, 
+and have not yet added it to VCS, you can deport the diskgroup first, and then add it to VCS. 
+You do not need to import a diskgroup to add it to VCS.

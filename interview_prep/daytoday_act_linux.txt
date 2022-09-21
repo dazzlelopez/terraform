@@ -1,0 +1,141 @@
+wThis may help you when attending interview,
+
+System Admin to setup new environment . Operation team to manage Existing Service so major things here Operation Task.
+
+System Admin
+1 )Based on Project Requirement , We Build servers (VM Creation or Physical Server) and  Install OS on servers . it is better to explain which tool we use to 
+create Kickstart
+
+2) Most of the Enterprise they use LDAP/NIS for the centralized authentication so you can say Managing User Accounts in LDAP . 
+Managing servers to add into LDAP/NIS Domain
+
+3) Additional Disk Addition and Disk Extension - (when the application usage grows in FS application team will ask to extend the disk space)
+ 
+4) Installing Monitoring Agent   and Backup Application
+
+For Monitoring
+
+Nagios/Opmanager/ BMC tools/IBM ...etc
+
+For Backup,
+
+Netbackup/Networker/BackupExec ...etc
+
+5)  Setting up the server for Application Team.
+Most of the System admin task just to setup server environment  ready . once done application team either DBA or Web Admin will take care their setup
+
+6) If there is high availability required then we  configure  VCS/Linux  for High Availability.
+
+7) Working on Tickets  -
+
+Example Tickets ,
+
+Server Load Average is high --  vmstat--defunct process-zombie process--nw card failure---orcale process-capacity planning failure
+Memory Usage is High --- share,cache,free
+
+Unable to Login to Server --- /var/wtmp-full cant login,/home full,nw issue, /tmp full cant login--user /home dir
+
+Disk Space Full --- /systemlog
+
+Network is dropped -- tcpdump -i eth0--ping --traceroute-netstat -i will show nw collision--sar --after this consult with nw team.
+
+8) OS Patching  - All OS vendors release patches to improve their product so it advised to patch all Servers.
+
+For OS patching , we can use many tools , if we add few  tools  into our resume it added advantage
+
+Spacewalk , Bladelogic , Tivoli Provision Manager ,
+
+9) CVS
+
+***************************************************************************************************************************************
+
+LVM  Disk/Storage  migration plan,
+
+If there is a requirement to migrate LVM Filesystem to Another Storage or Disk  below steps are helpful
+
+add new disk
+* pvcreate /dev/sdd  /dev/sde
+
+* pvscan
+
+* vgextend datavg  /dev/sdd  /dev/sde
+
+* vgs
+
+* lvs -a -o +devices
+
+create mirrored lvm on new disks
+
+* lvconvert -m1 -b --corelog datavg/datalv   /dev/sdd  /dev/sde
+
+check sync details
+
+* lvs -a -o +devices
+
+
+* wait for the sync to complete.
+***************************************************************************************************************************************
+
+Simple bash script to find pingable and non pingable IP
+#!/bin/bash
+for i in `seq 2 200`
+do
+ping -c1 192.168.0.$i | grep "1 rece" 
+if [ $? = 0 ]
+then
+echo " 192.168.0.$i is alive"
+else
+echo "192.168.0.$i is  not alive"
+fi
+done
+******************************************************************************************************************************************
+
+System Admin's main task  is to check  Server utilization
+
+ Disk usage
+
+1) which file currently growing ?
+
+     check in  
+# lsof |grep filesystem 
+
+2) FS cleanup 
+
+ check the files which older than 90days  and report to application team to clean up. 
+
+find / -mtime +90 -exec ls -l {} \; >> /tmp/old_files.txt
+
+Memory Usage
+free -m  
+
+
+-bash-4.1$ free -m
+                    total           used           free     shared    buffers     cached
+Mem:          3832         520       3311          0        101        261
+-/+ buffers/cache:        158       3674
+Swap:         6143          0       6143
+
+in this output  current usage  =   Used 520MB in that 101M for Buffer and 261M  for Cached 
+but buffer/cache usage only 158M  so here  Used   520 -  Buffer 101 - Cache 261 = 158M  
+
+-bash-4.1$ sar -r
+Linux 2.6.32-358.23.2.el6.x86_64 (dev1279)      08/11/16        _x86_64_        (2 CPU)
+
+00:00:01    kbmemfree kbmemused  %memused kbbuffers  kbcached  kbcommit   %commit
+00:10:01      3389728    535148     13.63    104184    268496    540304      5.29
+
+
+CPU Usage
+
+ps -auxf | sort -nr -k 4 | head -10
+
+
+
+Memory Usage
+
+ps axo pcpu,comm,pid,euser | sort -nr | head -n 10linux cpups axo vsz,comm,pid,euser |sort -rn|head -10
+ps axo %mem,comm,pid,euser | sort -nr | head -n 10linux memoryps -auxf | sort -nr -k 4 | head -10
+
+**********************************************************************************************************************************
+ 
+

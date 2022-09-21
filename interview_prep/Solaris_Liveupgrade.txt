@@ -1,0 +1,153 @@
+Backup critical filesystem ---check with backup team for the backup
+
+******
+
+SOP--environment based previous issue
+/etc/hostname file missing after update[edit]
+It is noticed that one of the /etc/hostname files was missing in the localzones after the update. Save a copy of the /etc/hostname files to be able to recreate the missing file again after the update.
+# for z in `zoneadm list -i | grep -v global`
+do
+    mkdir /var/tmp/liveupgrade/hostnamefiles/$z
+    zp=`zonecfg -z $z info zonepath | awk '{print $2}'`
+    cp -p $zp/root/etc/hostname* /var/tmp/liveupgrade/hostnamefiles/${z}/ 2>/dev/null
+done
+******
+
+liveupgrade packages to be updated
+
+Check LU software[edit]
+Check on the global that the following packages are installed
+
+# pkginfo SUNWlucfg SUNWluu SUNWlur
+application SUNWlucfg Live Upgrade Configuration
+application SUNWlur   Live Upgrade (root)
+application SUNWluu   Live Upgrade (usr)
+Verify that the right LU patches are installed, these should be the highest versions.
+Patch 119254-90: SunOS 5.10: Install and Patch Utilities Patch - Aug/14/2014
+Patch 121428-15: SunOS 5.10: Live Upgrade Zones Support Patch  - May 11, 2011 
+Patch 121430-92: SunOS 5.8 5.9 5.10: Live Upgrade Patch - Jun 15, 2014
+and
+138130-01 vold patch (already supperseeded on all servers)
+146578-06 cpio patch (Recent replacement for this patch is 148027-03)
+Check:
+
+# showrev -p | egrep 'Patch: 119254-90|Patch: 121430-92|Patch: 121428-15|Patch: 148027-06'
+..
+[root@s00143:NODB ~]# showrev -p | egrep 'Patch: 119254-90|Patch: 121430-92|Patch: 121428-15|Patch: 148027-06'
+Patch: 121430-92 Obsoletes: 121435-04, 121437-02 Requires:  Incompatibles:  Packages: SUNWlucfg, SUNWlur, SUNWluu
+Patch: 148027-06 Obsoletes: 121002-04, 126316-01, 126651-02, 127920-01, 127922-04, 128330-02, 137088-01, 138275-01, 138621-02, 138623-05, 140914-02, 142009-01, 142336-01, 143588-01, 144300-01, 144876-01, 146578-06 Requires: 118833-36, 12
+0011-14, 127127-11, 137137-09, 139555-08, 142909-17 Incompatibles:  Packages: SUNWcsu, SUNWcsr, SUNWesu, SUNWxcu4
+Patch: 119254-90 Obsoletes: 119015-03 Requires: 121133-02 Incompatibles:  Packages: SUNWswmt, SUNWinstall-patch-utils-root, SUNWpkgcmdsu, SUNWpkgcmdsr
+Patch: 121428-15 Obsoletes:  Requires: 120235-01, 121430-16 Incompatibles:  Packages: SUNWluzone
+If needed, install the patches.
+
+# patchadd /mnt/repository/solaris/packages/liveupgrade_s10_patches/119254-90
+# patchadd /mnt/repository/solaris/packages/liveupgrade_s10_patches/121430-92
+# patchadd /mnt/repository/solaris/packages/liveupgrade_s10_patches/121428-15 
+# patchadd /mnt/repository/solaris/packages/liveupgrade_s10_patches/148027-06 
+*****************************************************************************************
+
+Update STB packages:
+
+Upgrade Services Tools[edit]
+If the current level of Services Tools Bundle (STB) for Solaris is not installed, install the current version.
+Check current version of Service Tools:
+
+[root@s00153:NODB ~]# sneep -V
+Release 8.05-20140909
+If version 8.05 is displayed service tools are already upgraded
+
+cd /mnt/repository/solaris/packages/stb
+./install_stb.sh
+ 
+Would you like to (I)nstall, (X)tract, or (E)xit ? (I by default)
+******************************************************************************************
+Verify the free space in the zpool (rpool) --
+rpool space is must (zone root fs size is around 8-10 gb so we need 10 -15 gb freespace in rpool)
+# zpool list
+# zfs list
+***********************************************************************************
+Check the snapshot & clone:
+Snapshot & clones shouldn't be there
+
+*********************************************************************************
+Check the zone status:
+It should be in running state
+Check for zones in configured state[edit]
+Liveupgrade can not be used if zones are in configured state, see Lucreate_error_configured_zones
+
+# zoneadm list -cv
+Check current state of localzones before[edit]
+# zoneadm list -cv > /var/tmp/liveupgrade/zoneadm_state_before
+********************************************************************************
+
+
+***************************************************************************
+ldom backup:
+
+Backup of ldm configuration[edit]
+Take the backup of ldm configuration.
+
+# /usr/sbin/ldm list-constraints -x  >/var/tmp/ldm-save-primary.xml (change location)
+# cd /
+# tar -cvpf /var/tmp/ldm-autosave.tar var/opt/SUNWldm/autosave-*
+***************************************************************************
+check #fmadm faulty
+******************************************************************
+Check the console connectivity
+*******************************************************
+
+Create NEW BE:
+
+T5240 and Solaris 10 Guest ldoms
+Do not use the -p option, because the new BE must be created in the same pool
+# lucreate -l /var/tmp/liveupgrade/lucreate.error -o /var/tmp/liveupgrade/lucreate.log -c s10_u11_r2 -n s10_u11_r3
+
+********************************************************************
+
+Parallel processing :   ( to minimize the time )
+After the latest patches are applied, LU can use parallel processing. To use this, check if num_proc is set to a value > 1.
+Example:
+
+# vi /etc/patch/pdo.conf
+num_proc=8
+Newer versions already show a much higher value, like 192
+***********************************************************************
+
+LUUPGRADE:
+
+luupgrade -n s10_u11_r3 -l /var/tmp/liveupgrade/lupatch.error -o /var/tmp/liveupgrade/lupatch.log -s 
+/cdrom/patches/s10_u11_r3/patches -t `cat /cdrom/patches/s10_u11_r3/patches/patch_order
+*************************************************************************
+Luactivate[edit]
+Activate the new BE (s10_u11_r3)
+
+Note: Make sure to keep a copy of next output. We will need this info if the new BE fails to boot.
+
+Luactivate (M5000, T3 and T4)[edit]
+# luactivate s10_u11_r3
+******************************************************
+If activation is successful the global zone has to be rebooted
+
+Prepare for reboot[edit]
+First halt all non global zones
+
+# zoneadm list -cv
+# zoneadm -z <zonename> halt
+# zoneadm list -cv
+Stop the screen session
+
+# exit
+Reboot[edit]
+Login on the console (XSCF/ILOM) and reboot the server with init 6
+
+# init 6
+
+****************************************************
+
+
+
+
+
+
+
